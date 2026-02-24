@@ -1,0 +1,92 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-ezy}
+      MYSQL_USER: ${DB_USER:-ezy}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-change_me}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_change_me}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  docker-daemon:
+    image: docker:27-dind
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock", "--tls=false"]
+    healthcheck:
+      test: ["CMD-SHELL", "DOCKER_HOST=tcp://127.0.0.1:2375 docker info >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: ${DB_HOST:-mysql}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME:-ezy}
+      DB_USER: ${DB_USER:-ezy}
+      DB_PASSWORD: ${DB_PASSWORD:-change_me}
+      PAYMENTS_ENCRYPTION_KEY_B64: ${PAYMENTS_ENCRYPTION_KEY_B64:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-docker}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+    depends_on:
+      server:
+        condition: service_started
+    ports:
+      - "5173:80"
+
+  server-tools:
+    image: maven:3.9.9-eclipse-temurin-17
+    profiles: ["tools"]
+    working_dir: /workspace/server
+    environment:
+      DOCKER_HOST: tcp://docker-daemon:2375
+      TESTCONTAINERS_HOST_OVERRIDE: docker-daemon
+      TESTCONTAINERS_RYUK_DISABLED: "true"
+      DB_HOST: ${DB_HOST:-mysql}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME:-ezy}
+      DB_USER: ${DB_USER:-ezy}
+      DB_PASSWORD: ${DB_PASSWORD:-change_me}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_change_me}
+      PAYMENTS_ENCRYPTION_KEY_B64: ${PAYMENTS_ENCRYPTION_KEY_B64:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+      SPRING_PROFILES_ACTIVE: test
+    volumes:
+      - ./:/workspace
+      - maven-cache:/root/.m2
+    depends_on:
+      mysql:
+        condition: service_healthy
+      docker-daemon:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/workspace/server/docker/server-tools-entrypoint.sh"]
+    command: ["sleep", "infinity"]
+
+volumes:
+  mysql-data:
+  maven-cache:
