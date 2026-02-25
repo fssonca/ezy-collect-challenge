@@ -87,6 +87,18 @@ services:
     entrypoint: ["/bin/sh", "/workspace/server/docker/server-tools-entrypoint.sh"]
     command: ["sleep", "infinity"]
 
+  openapi-export:
+    image: curlimages/curl:8.12.1
+    profiles: ["tools"]
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+    depends_on:
+      mysql:
+        condition: service_healthy
+      server:
+        condition: service_started
+
 volumes:
   mysql-data:
   maven-cache:

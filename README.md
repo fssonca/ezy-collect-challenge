@@ -36,6 +36,26 @@ docker compose --profile tools run --rm server-tools ./mvnw test
 
 The `server-tools` container includes Maven + JDK 17 and connects to the `docker-daemon` sidecar for Testcontainers. No host Java or Maven is required.
 
+### OpenAPI / Swagger
+
+When the backend is running:
+
+- Swagger UI: `http://localhost:8080/swagger-ui.html`
+- OpenAPI JSON: `http://localhost:8080/v3/api-docs`
+- OpenAPI YAML: `http://localhost:8080/v3/api-docs.yaml`
+
+Generate/update the repository root OpenAPI file (`openapi.yaml`) using Docker-only tooling:
+
+```bash
+make openapi
+```
+
+Optional check (non-empty + contains `/payments` and `Idempotency-Key`):
+
+```bash
+make openapi-check
+```
+
 ### Payments API (current phase)
 
 Endpoint:
@@ -53,14 +73,17 @@ Request JSON fields:
 Current response contract:
 
 - Success: `201 Created` with `{ "id": "<uuid>", "status": "CREATED", "createdAt": "<ISO-8601>" }`
+- Idempotent replay (same `Idempotency-Key` + same payload): `200 OK` with the same body as the original create
+- Idempotency mismatch (same `Idempotency-Key` + different payload): `409 Conflict` with `code=IDEMPOTENCY_KEY_REUSED`
 - Validation errors: `400` with `code=VALIDATION_ERROR` and `fieldErrors[]`
 - Missing/blank idempotency key: `400` with `code=MISSING_IDEMPOTENCY_KEY`
 
-Security note (current phase):
+Security notes:
 
 - API responses do **not** return `cardNumber`, `cvv`, or `expiry`
-- Backend currently persists only non-sensitive payment fields plus optional `cardLast4`
-- Encryption-at-rest and idempotency persistence are intentionally deferred to a later phase
+- `cardNumber` is encrypted at rest (AES-GCM); plaintext card number is not stored
+- `cvv` is never persisted
+- Idempotency records store only a request hash and safe response JSON (`id`, `status`, `createdAt`)
 
 ### Other Docker commands
 
