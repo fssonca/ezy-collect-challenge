@@ -1,12 +1,15 @@
 package com.ezycollect.server.payments.api;
 
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.http.HttpStatus.CREATED;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -16,7 +19,11 @@ import com.ezycollect.server.payments.application.PaymentServiceResult;
 import com.ezycollect.server.payments.application.dto.CreatePaymentResponse;
 import com.ezycollect.server.shared.api.ApiExceptionHandler;
 import java.time.Instant;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -46,6 +53,7 @@ class PaymentsControllerTest {
                         .header("Idempotency-Key", "idem-123")
                         .content(validRequestJson()))
                 .andExpect(status().isCreated())
+                .andExpect(content().contentTypeCompatibleWith(APPLICATION_JSON))
                 .andExpect(jsonPath("$.id").value("550e8400-e29b-41d4-a716-446655440000"))
                 .andExpect(jsonPath("$.status").value("CREATED"))
                 .andExpect(jsonPath("$.createdAt").value("2026-02-24T12:00:00Z"))
@@ -62,9 +70,14 @@ class PaymentsControllerTest {
                         .contentType(APPLICATION_JSON)
                         .content(validRequestJson()))
                 .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(APPLICATION_JSON))
                 .andExpect(jsonPath("$.code").value("MISSING_IDEMPOTENCY_KEY"))
                 .andExpect(jsonPath("$.message").value("Idempotency-Key header is required"))
-                .andExpect(jsonPath("$.fieldErrors").isArray());
+                .andExpect(jsonPath("$.fieldErrors").isArray())
+                .andExpect(jsonPath("$").isMap())
+                .andExpect(content().string(not(containsString("cardNumber"))))
+                .andExpect(content().string(not(containsString("cvv"))))
+                .andExpect(content().string(not(containsString("expiry"))));
 
         verifyNoInteractions(paymentService);
     }
@@ -76,6 +89,7 @@ class PaymentsControllerTest {
                         .header("Idempotency-Key", "   ")
                         .content(validRequestJson()))
                 .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(APPLICATION_JSON))
                 .andExpect(jsonPath("$.code").value("MISSING_IDEMPOTENCY_KEY"))
                 .andExpect(jsonPath("$.message").value("Idempotency-Key header is required"));
 
@@ -98,7 +112,9 @@ class PaymentsControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
-                .andExpect(jsonPath("$.fieldErrors[*].field", hasItem("expiry")));
+                .andExpect(content().contentTypeCompatibleWith(APPLICATION_JSON))
+                .andExpect(jsonPath("$.fieldErrors[*].field", hasItem("expiry")))
+                .andExpect(content().string(not(containsString("424242424242"))));
 
         verifyNoInteractions(paymentService);
     }
@@ -143,6 +159,44 @@ class PaymentsControllerTest {
                 .andExpect(jsonPath("$.fieldErrors[*].field", hasItem("cvv")));
 
         verifyNoInteractions(paymentService);
+    }
+
+    @ParameterizedTest
+    @MethodSource("blankNamePayloads")
+    void blankNamesReturnValidationErrors(String payload, String fieldName) throws Exception {
+        mockMvc.perform(post("/payments")
+                        .contentType(APPLICATION_JSON)
+                        .header("Idempotency-Key", "idem-123")
+                        .content(payload))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.fieldErrors[*].field", hasItem(fieldName)))
+                .andExpect(jsonPath("$.fieldErrors[0].message").exists());
+
+        verifyNoInteractions(paymentService);
+    }
+
+    private static Stream<Arguments> blankNamePayloads() {
+        return Stream.of(
+                Arguments.of("""
+                        {
+                          "firstName":"   ",
+                          "lastName":"Doe",
+                          "expiry":"12/25",
+                          "cvv":"123",
+                          "cardNumber":"424242424242"
+                        }
+                        """, "firstName"),
+                Arguments.of("""
+                        {
+                          "firstName":"Jane",
+                          "lastName":"   ",
+                          "expiry":"12/25",
+                          "cvv":"123",
+                          "cardNumber":"424242424242"
+                        }
+                        """, "lastName"));
     }
 
     private String validRequestJson() {
