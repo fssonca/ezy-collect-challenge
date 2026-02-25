@@ -6,11 +6,13 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.http.HttpStatus.CREATED;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ezycollect.server.payments.application.PaymentService;
+import com.ezycollect.server.payments.application.PaymentServiceResult;
 import com.ezycollect.server.payments.application.dto.CreatePaymentResponse;
 import com.ezycollect.server.shared.api.ApiExceptionHandler;
 import java.time.Instant;
@@ -35,7 +37,9 @@ class PaymentsControllerTest {
     void validRequestReturnsCreatedWithoutSensitiveFields() throws Exception {
         Instant createdAt = Instant.parse("2026-02-24T12:00:00Z");
         given(paymentService.createPayment(eq("idem-123"), any()))
-                .willReturn(new CreatePaymentResponse("550e8400-e29b-41d4-a716-446655440000", "CREATED", createdAt));
+                .willReturn(new PaymentServiceResult(
+                        new CreatePaymentResponse("550e8400-e29b-41d4-a716-446655440000", "CREATED", createdAt),
+                        CREATED));
 
         mockMvc.perform(post("/payments")
                         .contentType(APPLICATION_JSON)

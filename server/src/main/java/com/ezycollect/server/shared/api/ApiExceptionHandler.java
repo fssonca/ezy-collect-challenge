@@ -1,5 +1,6 @@
 package com.ezycollect.server.shared.api;
 
+import com.ezycollect.server.payments.application.error.IdempotencyConflictException;
 import com.ezycollect.server.payments.application.error.MissingIdempotencyKeyException;
 import java.util.Comparator;
 import java.util.List;
@@ -47,10 +48,15 @@ public class ApiExceptionHandler {
                 .body(ApiErrorResponse.simple("MISSING_IDEMPOTENCY_KEY", ex.getMessage()));
     }
 
+    @ExceptionHandler(IdempotencyConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleIdempotencyConflict(IdempotencyConflictException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiErrorResponse.simple("IDEMPOTENCY_KEY_REUSED", ex.getMessage()));
+    }
+
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidJson(HttpMessageNotReadableException ex) {
         return ResponseEntity.badRequest()
                 .body(ApiErrorResponse.simple("VALIDATION_ERROR", "Malformed JSON request"));
     }
 }
-
