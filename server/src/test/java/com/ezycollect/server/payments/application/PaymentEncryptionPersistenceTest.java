@@ -38,7 +38,7 @@ class PaymentEncryptionPersistenceTest {
                         rs.getBytes("card_number_ciphertext"),
                         rs.getBytes("card_number_iv"),
                         rs.getString("card_last4")),
-                response.id());
+                response.response().id());
 
         assertThat(row).isNotNull();
         assertThat(row.ciphertext()).isNotNull().isNotEmpty();
