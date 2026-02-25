@@ -3,22 +3,29 @@ package com.ezycollect.server.payments.application;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.ezycollect.server.payments.application.dto.CreatePaymentRequest;
+import com.ezycollect.server.support.AbstractMySqlSpringBootIntegrationTest;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-@SpringBootTest(properties = {
-        "PAYMENTS_ENCRYPTION_KEY_B64=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
-})
-class PaymentEncryptionPersistenceTest {
+@SpringBootTest
+class PaymentEncryptionPersistenceTest extends AbstractMySqlSpringBootIntegrationTest {
 
     @Autowired
     private PaymentService paymentService;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @BeforeEach
+    void cleanTables() {
+        jdbcTemplate.update("DELETE FROM payment_idempotency");
+        jdbcTemplate.update("DELETE FROM payments");
+    }
 
     @Test
     void cardNumberIsStoredEncryptedAtRest() {
@@ -45,6 +52,15 @@ class PaymentEncryptionPersistenceTest {
         assertThat(row.iv()).isNotNull().hasSize(12);
         assertThat(row.last4()).isEqualTo("4242");
         assertThat(containsAsciiSequence(row.ciphertext(), cardNumber)).isFalse();
+        assertThat(paymentColumns()).doesNotContain("cvv", "expiry", "card_number");
+        assertThat(paymentColumns()).contains("card_number_ciphertext", "card_number_iv", "card_last4");
+    }
+
+    @Test
+    void paymentsSchemaDoesNotContainPlaintextSensitiveColumns() {
+        List<String> columns = paymentColumns();
+        assertThat(columns).doesNotContain("cvv", "expiry", "card_number", "card_number_plaintext");
+        assertThat(columns).contains("card_number_ciphertext", "card_number_iv");
     }
 
     private boolean containsAsciiSequence(byte[] haystack, String plaintext) {
@@ -65,6 +81,17 @@ class PaymentEncryptionPersistenceTest {
             }
         }
         return false;
+    }
+
+    private List<String> paymentColumns() {
+        return jdbcTemplate.queryForList(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'payments'
+                """,
+                String.class);
     }
 
     private record PaymentRow(byte[] ciphertext, byte[] iv, String last4) {
