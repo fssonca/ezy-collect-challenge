@@ -1,0 +1,201 @@
+openapi: 3.0.1
+info:
+  title: OpenAPI definition
+  version: v0
+servers:
+- url: http://server:8080
+  description: Generated server url
+tags:
+- name: Payments
+  description: Payment creation API
+paths:
+  /payments:
+    post:
+      tags:
+      - Payments
+      summary: Create a payment
+      description: Creates a payment on first request and replays the same response
+        for the same Idempotency-Key and identical payload.
+      operationId: createPayment
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        description: Unique client-provided key used to deduplicate payment creation
+          requests
+        required: true
+        schema:
+          type: string
+        example: payment-create-001
+      requestBody:
+        description: Payment creation payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePaymentRequest"
+            examples:
+              createPaymentRequest:
+                description: createPaymentRequest
+                value:
+                  firstName: Ada
+                  lastName: Lovelace
+                  expiry: 12/29
+                  cvv: "123"
+                  cardNumber: "123456789012"
+        required: true
+      responses:
+        "200":
+          description: Idempotent replay (same key and same payload)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatePaymentResponse"
+              examples:
+                replay:
+                  description: replay
+                  value:
+                    id: b9ec8bf8-34ef-4d90-97d2-3ec9bd4b3400
+                    status: CREATED
+                    createdAt: 2026-02-25T12:34:56Z
+        "400":
+          description: Validation error or missing/blank Idempotency-Key header
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+              examples:
+                validationError:
+                  description: validationError
+                  value:
+                    code: VALIDATION_ERROR
+                    message: Request validation failed
+                    fieldErrors:
+                    - field: expiry
+                      message: expiry must be in MM/YY format with month 01-12
+                missingIdempotencyKey:
+                  description: missingIdempotencyKey
+                  value:
+                    code: MISSING_IDEMPOTENCY_KEY
+                    message: Idempotency-Key header is required
+                    fieldErrors: []
+        "201":
+          description: Payment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatePaymentResponse"
+              examples:
+                created:
+                  description: created
+                  value:
+                    id: b9ec8bf8-34ef-4d90-97d2-3ec9bd4b3400
+                    status: CREATED
+                    createdAt: 2026-02-25T12:34:56Z
+        "409":
+          description: Idempotency key reused with a different payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+              examples:
+                idempotencyConflict:
+                  description: idempotencyConflict
+                  value:
+                    code: IDEMPOTENCY_KEY_REUSED
+                    message: Idempotency-Key was already used with a different request
+                      payload
+                    fieldErrors: []
+  /api/health:
+    get:
+      tags:
+      - health-controller
+      operationId: health
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+components:
+  schemas:
+    CreatePaymentRequest:
+      required:
+      - cardNumber
+      - cvv
+      - expiry
+      - firstName
+      - lastName
+      type: object
+      properties:
+        firstName:
+          maxLength: 100
+          minLength: 1
+          type: string
+          description: Payer first name (trimmed)
+          example: Ada
+        lastName:
+          maxLength: 100
+          minLength: 1
+          type: string
+          description: Payer last name (trimmed)
+          example: Lovelace
+        expiry:
+          pattern: "^(0[1-9]|1[0-2])/\\d{2}$"
+          type: string
+          description: Card expiry in MM/YY format
+          example: 12/29
+        cvv:
+          maxLength: 4
+          minLength: 3
+          pattern: \d+
+          type: string
+          description: Card security code (3 or 4 digits)
+          example: "123"
+        cardNumber:
+          maxLength: 19
+          minLength: 12
+          pattern: \d+
+          type: string
+          description: "Primary account number (digits only, 12-19 digits)"
+          example: "123456789012"
+      description: Payment creation request
+    CreatePaymentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Payment identifier (UUID)
+          example: b9ec8bf8-34ef-4d90-97d2-3ec9bd4b3400
+        status:
+          type: string
+          description: Payment processing status
+          example: CREATED
+        createdAt:
+          type: string
+          description: Creation timestamp in ISO-8601 UTC
+          format: date-time
+          example: 2026-02-25T12:34:56Z
+    ApiErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          example: Request validation failed
+        fieldErrors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApiFieldError"
+    ApiFieldError:
+      type: object
+      properties:
+        field:
+          type: string
+          example: expiry
+        message:
+          type: string
+          example: expiry must be in MM/YY format with month 01-12
