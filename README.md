@@ -1,106 +1,129 @@
 # ezyCollect Monorepo
 
-Docker-first production-ready monorepo with:
+Docker-first monorepo:
 
-- `server/` Spring Boot 3 (Java 17, Maven Wrapper, Flyway, MySQL)
-- `client/` Vite + React + TypeScript + Tailwind
-- Root `docker-compose.yml` for app runtime and backend tooling/tests
+- `server/`: Spring Boot 3 (Java 17, Flyway, MySQL, Testcontainers, OpenAPI)
+- `client/`: Vite + React + TypeScript + Tailwind (served via Nginx in Docker)
+- Root `docker-compose.yml`: runtime + tooling containers (no host Java/Maven required)
 
-## 1. Docker-first workflow (recommended)
+## 1. Quickstart (Setup + Run)
 
-Local Java and Maven are **not required** for normal development workflows.
+### Prereqs
 
-### Start the full stack
+- Docker + Docker Compose
+
+### Configure environment
+
+```bash
+cp .env.example .env
+```
+
+Update secrets in `.env` (at minimum):
+
+- `DB_PASSWORD`
+- `MYSQL_ROOT_PASSWORD`
+- `PAYMENTS_ENCRYPTION_KEY_B64`
+
+### Run the app
 
 ```bash
 docker compose up --build
 ```
 
-Services:
+Open:
 
 - Frontend: `http://localhost:5173`
 - Backend API: `http://localhost:8080`
-- MySQL: `localhost:3306`
+- Swagger UI: `http://localhost:8080/swagger-ui.html`
 
-### Run backend tests (including Testcontainers integration tests)
+### Stop the app
+
+```bash
+make down
+```
+
+### Rebuild
+
+```bash
+make rebuild
+```
+
+Restart only one service:
+
+```bash
+docker compose restart server
+docker compose restart client
+```
+
+Rebuild and restart only one service:
+
+```bash
+docker compose up --build -d server
+docker compose up --build -d client
+```
+
+### Optional: Host debugging
+
+Use this only for IDE debugging outside Docker.
+
+- Host `./mvnw` requires Java 17 installed locally.
+- When running backend on host: set `DB_HOST=localhost` (not `mysql`).
+
+```bash
+cd server
+DB_HOST=localhost SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
+```
+
+## 2. App Overview
+
+### Payments API
+
+- Endpoint: `POST /payments`
+- Required header: `Idempotency-Key` (required, non-empty, non-blank)
+- Request fields:
+  - `invoiceIds` (required, non-empty array)
+  - `firstName`, `lastName`, `expiry`, `cvv`, `cardNumber`
+- Responses:
+  - `201 Created` first create: `{ id, status, createdAt }`
+  - `200 OK` replay (same key + same payload): same body as original
+  - `409 Conflict` mismatch (same key + different payload): `code=IDEMPOTENCY_KEY_REUSED`
+  - `400 Bad Request` validation: `code=VALIDATION_ERROR` with `fieldErrors[]`
+  - `400 Bad Request` missing/blank key: `code=MISSING_IDEMPOTENCY_KEY`
+
+Security / data handling:
+
+- API never returns `cardNumber`, `cvv`, or `expiry`
+- `cardNumber` is encrypted at rest (AES-GCM); plaintext card number is not stored
+- `cvv` is never persisted
+- Idempotency records store request hash + safe response JSON only (`id`, `status`, `createdAt`)
+- CORS is enabled for local frontend origins by default (`http://localhost:5173`, `http://127.0.0.1:5173`)
+
+### Frontend UX
+
+- Invoices dashboard with sortable table and multi-select
+- Payment modal:
+  - validation + accessible modal behavior (focus trap, initial focus, Escape)
+  - submits to backend and handles `201/200/400/409`
+  - retry for network failures without losing form values
+- Receipt modal after success
+- Paid invoices removed and totals recomputed
+
+### Verification and tooling (Docker-first)
+
+Backend tests (unit + integration via Testcontainers, Docker-only Maven):
 
 ```bash
 make test
 ```
 
-This runs:
-
-```bash
-docker compose --profile tools run --rm server-tools ./mvnw test
-```
-
-The `server-tools` container includes Maven + JDK 17 and connects to the `docker-daemon` sidecar for Testcontainers. No host Java or Maven is required.
-
-### OpenAPI / Swagger
-
-When the backend is running:
-
-- Swagger UI: `http://localhost:8080/swagger-ui.html`
-- OpenAPI JSON: `http://localhost:8080/v3/api-docs`
-- OpenAPI YAML: `http://localhost:8080/v3/api-docs.yaml`
-
-Generate/update the repository root OpenAPI file (`openapi.yaml`) using Docker-only tooling:
+OpenAPI export to repository root (`openapi.yaml`), Docker-only:
 
 ```bash
 make openapi
-```
-
-Optional check (non-empty + contains `/payments` and `Idempotency-Key`):
-
-```bash
 make openapi-check
 ```
 
-### Payments API (current phase)
-
-Endpoint:
-
-- `POST /payments`
-
-Required header:
-
-- `Idempotency-Key` (required, non-empty, non-blank)
-
-Request JSON fields:
-
-- `invoiceIds` (required, non-empty array)
-- `firstName`, `lastName`, `expiry`, `cvv`, `cardNumber`
-
-Current response contract:
-
-- Success: `201 Created` with `{ "id": "<uuid>", "status": "CREATED", "createdAt": "<ISO-8601>" }`
-- Idempotent replay (same `Idempotency-Key` + same payload): `200 OK` with the same body as the original create
-- Idempotency mismatch (same `Idempotency-Key` + different payload): `409 Conflict` with `code=IDEMPOTENCY_KEY_REUSED`
-- Validation errors: `400` with `code=VALIDATION_ERROR` and `fieldErrors[]`
-- Missing/blank idempotency key: `400` with `code=MISSING_IDEMPOTENCY_KEY`
-
-Security notes:
-
-- API responses do **not** return `cardNumber`, `cvv`, or `expiry`
-- `cardNumber` is encrypted at rest (AES-GCM); plaintext card number is not stored
-- `cvv` is never persisted
-- Idempotency records store only a request hash and safe response JSON (`id`, `status`, `createdAt`)
-- CORS is enabled for local frontend origins by default (`http://localhost:5173`, `http://127.0.0.1:5173`)
-
-### Frontend (current state)
-
-- Invoices dashboard with sortable desktop table and multi-invoice selection
-- Payment summary with computed subtotal + fee + pay total
-- Payment modal with:
-  - card form validation
-  - card brand detection/icons
-  - backend submission to `POST /payments`
-  - `Idempotency-Key` generation/retry handling in the client
-  - inline error handling for `400` / `409` / network failures
-- Receipt modal shown after successful payment
-- Paid invoices are removed from the list and totals are recomputed
-
-## AI-assisted Development Method
+## 3. AI-assisted Development Method
 
 This project used a **spec-driven, incremental development** methodology with AI assistance: each prompt acted like a mini engineering spec with explicit scope, constraints, and acceptance criteria before implementation.
 
@@ -112,64 +135,3 @@ This project used a **spec-driven, incremental development** methodology with AI
 - **Verification-driven iteration** after each AI-generated change: run the relevant commands (especially `docker compose up --build`, `make test`, `make openapi`), review the code, and adjust details to match the spec and production expectations.
 
 In practice, AI was used as an implementation accelerator, while human review and Docker-based verification remained the source of truth for correctness.
-
-### Other Docker commands
-
-```bash
-make backend-run
-make rebuild
-make down
-```
-
-### Restart only one app (server or client)
-
-Restart without rebuilding:
-
-```bash
-docker compose restart server
-docker compose restart client
-```
-
-Rebuild + restart only one service after code changes:
-
-```bash
-docker compose up --build -d server
-docker compose up --build -d client
-```
-
-Notes:
-
-- `server` depends on `mysql` (Compose keeps `mysql` running and healthy)
-- `client` serves built static files via Nginx, so use `--build` after frontend code changes
-
-## 2. Optional host debugging workflow
-
-Use this only if you want IDE-based debugging outside Docker.
-
-- `./mvnw` on the host is optional and **requires Java 17** installed locally.
-- When running the backend on the host, set `DB_HOST=localhost` (not `mysql`), because `mysql` is only resolvable inside Docker Compose networking.
-
-Example:
-
-```bash
-cd server
-DB_HOST=localhost SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
-```
-
-## Environment setup
-
-1. Copy `.env.example` to `.env`
-2. Update secrets (`DB_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `PAYMENTS_ENCRYPTION_KEY_B64`)
-
-Important defaults for Docker:
-
-- `DB_HOST=mysql` (container-to-container)
-- Do not use `localhost` inside containers
-
-## Notes
-
-- Backend DB configuration is environment-driven (no hardcoded credentials)
-- Flyway migrations run on backend startup
-- Frontend API base URL is configured via `VITE_API_BASE_URL` build arg (default `http://localhost:8080`)
-- `make test` remains the required verification path for backend changes (Docker-first Maven/Testcontainers workflow)
-- `openapi.yaml` at the repository root is generated from the running backend via `make openapi`
