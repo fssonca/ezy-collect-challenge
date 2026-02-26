@@ -99,6 +99,11 @@ export function InvoicesTable({ invoices }: InvoicesTableProps) {
     setSelectedInvoiceIds(visibleInvoiceIds);
   }
 
+  const visibleInvoiceIds = sortedInvoices.map((invoice) => invoice.id);
+  const allVisibleSelected =
+    visibleInvoiceIds.length > 0 &&
+    visibleInvoiceIds.every((invoiceId) => selectedInvoiceIdSet.has(invoiceId));
+
   return (
     <div className="overflow-hidden rounded-lg bg-white">
       <div className="overflow-x-auto">
@@ -110,7 +115,12 @@ export function InvoicesTable({ invoices }: InvoicesTableProps) {
                   type="button"
                   onClick={toggleSelectAll}
                   className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-blue-500 bg-white text-[11px] font-bold leading-none text-blue-600"
-                  aria-label="Toggle invoice selection"
+                  aria-label={
+                    allVisibleSelected
+                      ? "Clear invoice selection"
+                      : "Select all visible invoices"
+                  }
+                  aria-pressed={allVisibleSelected}
                 >
                   <span
                     className={`${selectedInvoiceIds.length > 0 ? "" : "text-white"}`}
@@ -122,6 +132,13 @@ export function InvoicesTable({ invoices }: InvoicesTableProps) {
               {headers.map((header) => (
                 <th
                   key={header.key}
+                  aria-sort={
+                    sortKey === header.key
+                      ? sortDirection === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : "none"
+                  }
                   className={`py-3 ${
                     header.key === "priority" ? "pl-4 pr-6" : "px-4"
                   } ${
@@ -147,6 +164,13 @@ export function InvoicesTable({ invoices }: InvoicesTableProps) {
                           : "↓"
                         : "↕"}
                     </span>
+                    {sortKey === header.key ? (
+                      <span className="sr-only">
+                        {sortDirection === "asc"
+                          ? "sorted ascending"
+                          : "sorted descending"}
+                      </span>
+                    ) : null}
                   </button>
                 </th>
               ))}
