@@ -1,0 +1,857 @@
+
+
+Create a Docker-first production-ready monorepo.
+
+The system must run and test fully via Docker.
+No local Java or Maven should be required for normal development workflows.
+
+---
+
+## Project Structure
+
+* `server/` → Spring Boot 3.x (Java 17, Maven wrapper, Flyway, MySQL)
+* `client/` → Vite + React + TypeScript + Tailwind
+* `docker-compose.yml` at root
+* `.env.example`
+* `Makefile`
+* `README.md`
+
+---
+
+## Critical Architectural Constraints
+
+1. Do NOT rely on running `./mvnw` on the host.
+
+2. All backend build and test commands must execute inside Docker.
+
+3. Testcontainers must work fully in Docker (including integration tests).
+
+4. The stack must work with a single command:
+
+   docker compose up --build
+
+5. Backend tests must work with:
+
+   make test
+
+---
+
+## Docker Compose Requirements
+
+Define services:
+
+* mysql (MySQL 8, persistent volume, healthcheck)
+* server (Spring Boot app container)
+* client (Nginx serving built Vite app)
+* server-tools (Maven + JDK container for build/test)
+* docker-daemon (Docker-in-Docker sidecar for Testcontainers)
+
+### Important Rules
+
+* Containers must communicate via service names.
+* `DB_HOST` inside containers must default to `mysql`.
+* Do not depend on `localhost` inside containers.
+* MySQL healthcheck must be stable and use container env vars.
+* docker-daemon must expose dockerd on tcp://0.0.0.0:2375.
+* dind healthcheck must use DOCKER_HOST=tcp://127.0.0.1:2375 docker info.
+
+`server-tools` must:
+
+* Use Maven image with JDK 17
+* Mount project directory
+* Mount Maven cache volume
+* Connect to docker-daemon via DOCKER_HOST
+* Disable Ryuk if necessary
+* Depend on mysql and docker-daemon health
+
+---
+
+## Environment Variables
+
+`.env.example` must include:
+
+DB_HOST=mysql
+DB_PORT=3306
+DB_NAME=ezy
+DB_USER=ezy
+DB_PASSWORD=change_me
+MYSQL_ROOT_PASSWORD=root_change_me
+PAYMENTS_ENCRYPTION_KEY_B64=base64_32_byte_key
+SPRING_PROFILES_ACTIVE=docker
+
+Important:
+
+* DB_HOST=mysql must be the default for Docker.
+* README must clearly explain how to override DB_HOST=localhost for host debugging only.
+
+---
+
+## Backend Requirements
+
+* Java 17
+* Spring Boot 3.x
+* Maven Wrapper (real Apache wrapper, not placeholder)
+* Clean layered architecture
+* Flyway migration folder created
+* application.yml with:
+
+  * docker profile (DB_HOST=mysql)
+  * local profile (DB_HOST=localhost)
+
+Important:
+
+* application.yml must read all DB config from environment variables.
+* No hardcoded credentials.
+* `server` Dockerfile must build the jar and run it with java -jar.
+
+---
+
+## Backend Testing Requirements
+
+* Include:
+
+  * Spring context load test
+  * MySQL integration test using Testcontainers
+* `make test` must run:
+
+  * docker compose --profile tools run --rm server-tools ./mvnw test
+
+Host `./mvnw test` should be documented as optional only and require local Java.
+
+---
+
+## Frontend Requirements
+
+* Vite + React + TypeScript
+* Tailwind configured correctly
+* Multi-stage Dockerfile:
+
+  * Node build stage
+  * Nginx production stage
+* Nginx must serve built static files
+* client container exposed on port 5173 (mapped to 80 inside container)
+
+Environment:
+
+* Use build arg VITE_API_BASE_URL
+* Default to [http://localhost:8080](http://localhost:8080)
+
+---
+
+## Makefile Requirements
+
+Provide:
+
+make test
+make backend-run
+make down
+make rebuild
+
+All must execute via Docker, not host tooling.
+
+---
+
+## README Requirements
+
+Must clearly separate:
+
+1. Docker-first workflow (recommended)
+2. Optional host debugging workflow
+
+Explicitly state:
+
+* Local Java is NOT required if using make test.
+* `./mvnw` on host requires Java 17.
+* DB_HOST must be localhost when running backend on host.
+
+---
+
+## Non-Negotiable Goals
+
+* docker compose up --build works on a clean machine
+* make test runs integration tests fully
+* No reliance on host Java
+* No reliance on host Maven
+* No localhost DB usage inside containers
+* All service healthchecks stable
+
+
+
+######################################################################
+
+BACKEND PROMPTS
+
+
+Implement the Payments backend domain and API contract in `server/` (Spring Boot 3, Java 17, MySQL). Focus only on: DTOs, validation, response shapes, controller/service/repository structure, and error handling. Do not implement encryption-at-rest or idempotency persistence yet, but the API must require the `Idempotency-Key` header and must not expose raw card data in responses.
+
+Critical workflow constraint:
+
+* Do not rely on running Maven on the host. All verification should work via `make test` (which runs Maven inside Docker). 
+
+Functional requirements (this phase):
+
+* Implement `POST /payments`
+* Accept JSON body fields: `firstName`, `lastName`, `expiry`, `cvv`, `cardNumber`
+* Require header `Idempotency-Key` (string, non-empty, not blank). If missing OR blank, return 400 with a consistent JSON error body.
+* Never expose `cardNumber`, `cvv`, or `expiry` in API responses.
+* Do not log raw cardNumber/cvv/expiry or full request bodies.
+
+Validation rules:
+
+* `firstName`: required, trimmed, length 1–100
+* `lastName`: required, trimmed, length 1–100
+* `cardNumber`: required, digits only, length 12–19
+* `cvv`: required, digits only, length 3–4
+* `expiry`: required, format `MM/YY`, month must be 01–12
+
+  * Implement a custom Bean Validation annotation (e.g., `@ValidExpiry`) or equivalent validator to enforce the month range + format.
+
+API contract:
+
+* Success (create):
+
+  * Return `201 Created`
+  * Response JSON: `{ "id": "<uuid>", "status": "CREATED", "createdAt": "<ISO-8601>" }`
+* Errors:
+
+  * Validation errors: `400 Bad Request` with JSON:
+
+    * `code`: "VALIDATION_ERROR"
+    * `message`: human readable
+    * `fieldErrors`: array of `{ "field": "...", "message": "..." }`
+  * Missing/blank Idempotency-Key: `400 Bad Request` with JSON:
+
+    * `code`: "MISSING_IDEMPOTENCY_KEY"
+    * `message`: "Idempotency-Key header is required"
+* Do not implement 409 conflict logic yet (that’s next phase), but structure the service so idempotency can be added cleanly.
+
+Persistence (important security alignment):
+
+* Create `PaymentEntity` and persist only non-sensitive fields now (recommended):
+
+  * `id` (UUID)
+  * `firstName`, `lastName`
+  * `createdAt`, `status`
+  * optionally `cardLast4` (derived from cardNumber, store only last4)
+* Do not persist `cvv` at all.
+* Do not persist plaintext `cardNumber` or `expiry` even temporarily. Leave TODO placeholders for encrypted columns to be added in the encryption phase.
+
+Layering and packages:
+
+* Controller: HTTP handling only
+* Service: workflow; will later handle idempotency + encryption
+* Repository: JPA
+* Add `@ControllerAdvice` to convert:
+
+  * `MethodArgumentNotValidException` into the validation error JSON
+  * missing header and blank header into the missing idempotency error JSON
+* Ensure all responses are JSON (no default Spring HTML error pages).
+
+Implementation details:
+
+* Use DTOs for request/response; do not expose entities.
+* Use `Instant` for timestamps (serialize ISO-8601).
+* Ensure firstName/lastName are trimmed before validation or in service (avoid accepting whitespace-only).
+
+Tests (must run via Docker):
+
+* Add MockMvc tests that run under `make test`:
+
+  1. Valid request returns 201 and response has id/status/createdAt and does not contain any card fields.
+  2. Missing Idempotency-Key header returns 400 with code MISSING_IDEMPOTENCY_KEY.
+  3. Blank Idempotency-Key header returns 400 with code MISSING_IDEMPOTENCY_KEY.
+  4. Invalid expiry returns 400 with fieldErrors for expiry.
+  5. Non-digit cardNumber returns 400 with fieldErrors for cardNumber.
+  6. Invalid cvv length returns 400 with fieldErrors for cvv.
+
+Acceptance criteria:
+
+* `POST /payments` works as specified
+* Response/error shapes are consistent and stable
+* No raw card details in responses or logs
+* `make test` passes (Docker-first). Host execution is not required.
+
+
+
+######################################################################
+
+
+
+Implement encryption-at-rest for `cardNumber` in the `server/` Spring Boot application (Java 17, MySQL). The goal is: when a payment is persisted, the database must not store the card number in plaintext. Do not change the public API contract other than internal behavior. Keep code minimal, clean, and production-minded.
+
+Requirements:
+
+* `cardNumber` must be encrypted when persisted to the database.
+* Do not expose raw card details in API responses. 
+
+Crypto requirements:
+
+* Use authenticated encryption: AES-GCM.
+* Use a random 12-byte IV (nonce) per encryption operation.
+* Use a 256-bit key provided via environment variable `PAYMENTS_ENCRYPTION_KEY_B64` (base64-encoded 32 bytes).
+* If the key is missing or invalid at startup, fail fast with a clear error message.
+
+Data model requirements:
+
+* Do not store plaintext `cardNumber`.
+* Store these columns in `payments` table:
+
+  * `card_number_ciphertext` as BLOB (or VARBINARY) containing AES-GCM ciphertext+tag
+  * `card_number_iv` as BINARY(12)
+  * optionally `card_last4` as VARCHAR(4) (derived from request)
+* Never store CVV at rest.
+* Expiry may remain request-only (do not persist it).
+
+Implementation approach:
+
+* Prefer a clean separation:
+
+  * `CryptoService` (or `AesGcmCrypto`) responsible for encrypt/decrypt
+  * A small `EncryptionKeyProvider` that decodes and validates the base64 key once at startup
+* Choose one of these patterns (pick the simpler/cleaner and document it in code):
+
+  1. JPA `AttributeConverter` for encrypting/decrypting a field (note: it’s harder because IV must be stored; if you choose this, store IV inside a single serialized blob or use an embeddable)
+  2. Service-layer encryption: DTO -> service encrypts -> entity stores ciphertext + iv (recommended for clarity)
+
+Service behavior changes:
+
+* In `PaymentService.createPayment(...)`, before saving:
+
+  * Extract last4 from `cardNumber`
+  * Encrypt cardNumber using AES-GCM with random IV
+  * Save ciphertext + iv + last4 to entity
+* Ensure logs never include cardNumber/cvv/expiry.
+
+Flyway migration:
+
+* Add a new migration that updates the schema:
+
+  * add `card_number_ciphertext` BLOB NOT NULL
+  * add `card_number_iv` BINARY(12) NOT NULL
+  * add `card_last4` VARCHAR(4) NULL (optional)
+* If an existing plaintext cardNumber column exists, drop it (or keep but unused) — prefer dropping to avoid accidental plaintext storage.
+
+Unit/integration tests (must run via `make test`):
+
+* Add a test that creates a payment (via service or HTTP), then queries the DB row and asserts:
+
+  * ciphertext is present and not empty
+  * IV is present and length 12
+  * ciphertext does not contain the plaintext cardNumber (string match / byte scan)
+* Add a negative test:
+
+  * if `PAYMENTS_ENCRYPTION_KEY_B64` is missing or invalid base64 / wrong length, app startup fails (or at least encryption throws a clear exception and request fails with 500 + safe message)
+* Keep tests deterministic. Do not hardcode the encryption output since IV is random.
+
+Security notes:
+
+* Use `SecureRandom` for IV generation.
+* Use `Cipher.getInstance("AES/GCM/NoPadding")`.
+* Use `GCMParameterSpec(128, iv)` for a 128-bit tag.
+* Consider setting AAD (additional authenticated data) to something stable (optional). If you do, document it and keep it consistent.
+
+Deliverables:
+
+* Updated entity + migration + crypto utility
+* Payment creation stores encrypted cardNumber at rest
+* All existing tests pass and new encryption test passes via `make test`
+* No raw card data returned in responses or logs
+
+Do not implement idempotency persistence/409/200 replay yet (next phase).
+
+
+
+######################################################################
+
+
+
+Implement idempotency for `POST /payments` in the `server/` Spring Boot app (Java 17, MySQL). This must meet the  requirements: prevent duplicate payments using `Idempotency-Key`, return the same result on replay with identical payload, and return 409 on replay with different payload. 
+
+Critical workflow constraint:
+
+* All verification must run via `make test` (Docker-first). Do not assume host Java/Maven.
+
+Behavior requirements:
+
+1. If the same `Idempotency-Key` is received again with the same request payload:
+
+   * Do not create a new payment row
+   * Return the same result as the original request
+   * HTTP status should be `200 OK` (replay), while the first creation remains `201 Created`
+2. If the same `Idempotency-Key` is received again with a different payload:
+
+   * Return `409 Conflict`
+   * Include a clear error message explaining the mismatch
+
+Design requirements (DB model):
+
+* Add a table for idempotency records, e.g. `payment_idempotency`:
+
+  * `idempotency_key` VARCHAR(...) PRIMARY KEY (or UNIQUE)
+  * `request_hash` CHAR(64) NOT NULL (SHA-256 hex)
+  * `payment_id` BINARY(16) or CHAR(36) (match PaymentEntity id type), NOT NULL once created
+  * `response_status` INT NOT NULL
+  * `response_body` JSON or TEXT NOT NULL (store the response returned to the client)
+  * `created_at` TIMESTAMP/instant
+  * `updated_at` TIMESTAMP/instant (optional)
+* Enforce uniqueness at the database level on `idempotency_key`.
+* Add Flyway migration for the new table.
+
+Hashing requirements:
+
+* Compute `request_hash` as SHA-256 of a canonical representation of the incoming request payload.
+* Canonicalization must be stable:
+
+  * Trim firstName/lastName consistently
+  * Ensure JSON field order is stable (use Jackson to serialize a DTO in a deterministic way rather than raw request string)
+* Do not include `Idempotency-Key` in the hash. Only the request body.
+
+Service workflow requirements (transaction + race safety):
+
+* Implement idempotency in `PaymentService.createPayment(...)`:
+
+  * Begin a transaction.
+  * Compute request_hash from the validated request DTO.
+  * Attempt to insert an idempotency record for (key, hash) in a safe way.
+    Options (pick one clean approach and implement it correctly):
+    A) Insert first; if duplicate key occurs, load existing record and decide replay vs conflict.
+    B) Select-for-update existing record by key; if none, create it; then proceed.
+  * If record exists:
+
+    * If request_hash matches:
+
+      * Return stored response_body with stored response_status but map status to 200 for replay (or store both firstStatus and replayStatus; choose one consistent approach).
+    * If request_hash differs:
+
+      * Throw an IdempotencyConflictException → ControllerAdvice returns 409 with code + message.
+  * If record is newly created:
+
+    * Proceed to create the payment (including existing encryption-at-rest behavior).
+    * Build the response `{ id, status, createdAt }` (same schema you already use).
+    * Persist the idempotency record with `payment_id`, `response_status=201`, and `response_body` (JSON).
+    * Return 201 with response.
+
+Response rules:
+
+* First request: 201 Created with `{ id, status, createdAt }`
+* Replay (same key + same payload): 200 OK with the exact same JSON body as the original request
+* Mismatch (same key + different payload): 409 Conflict with JSON:
+
+  * `code`: "IDEMPOTENCY_KEY_REUSED"
+  * `message`: "Idempotency-Key was already used with a different request payload"
+  * optionally include a safe `details` field (do not echo cardNumber/cvv/expiry)
+
+Security constraints:
+
+* Never store raw cardNumber/cvv/expiry in idempotency tables.
+* request_hash must be derived from canonical DTO and must not log sensitive values.
+* response_body stored should contain only `{ id, status, createdAt }`.
+
+ControllerAdvice:
+
+* Add/extend global exception handling so IdempotencyConflictException returns 409 with the specified JSON shape.
+
+Tests (must run via `make test` and include Testcontainers MySQL):
+Add MockMvc integration tests that assert:
+
+1. First create with key K and payload P:
+
+   * returns 201
+   * DB has 1 payment row
+2. Second create with same key K and same payload P:
+
+   * returns 200
+   * response body equals the original (same id/createdAt)
+   * DB still has 1 payment row
+3. Third create with same key K and different payload P2:
+
+   * returns 409
+   * error code and message match
+   * DB still has 1 payment row
+
+Also add a concurrency/race test if feasible (optional but good):
+
+* Two requests with same key at nearly same time should not create duplicates (may be done at service layer with multi-threading test, or rely on DB constraint + transaction logic).
+
+Deliverables:
+
+* Flyway migration for idempotency table
+* JPA entity/repository for idempotency records
+* Deterministic request hashing utility (SHA-256)
+* Updated PaymentService logic implementing idempotency behavior
+* Updated tests proving replay vs conflict and no duplicates
+* All tests pass via `make test`
+
+
+
+######################################################################
+
+
+
+Add OpenAPI documentation for the Payments API and ensure an OpenAPI YAML file exists at the repository root as `openapi.yaml`. 
+
+Critical workflow constraint:
+
+* Do not rely on host Java/Maven. All verification must work via Docker (`make test` / Dockerized Maven). Any generation step must be runnable via Docker tooling.
+
+Goals:
+
+1. Serve Swagger UI for the running backend.
+2. Provide a reproducible way to export the OpenAPI spec as YAML to `../openapi.yaml` (repo root).
+3. The exported spec must accurately document headers, request/response schemas, and error responses for `POST /payments`.
+
+Implementation requirements:
+
+* Use springdoc-openapi (already in dependencies) to expose:
+
+  * OpenAPI JSON at `/v3/api-docs`
+  * Swagger UI at `/swagger-ui.html` (or the default springdoc path)
+* Ensure endpoint and schemas are annotated so the generated spec includes:
+
+  * `POST /payments`
+  * Required header `Idempotency-Key` (string, required)
+  * Request body schema: `firstName`, `lastName`, `expiry`, `cvv`, `cardNumber` (all required, with validation constraints where possible)
+  * Success responses:
+
+    * `201 Created` with `{ id, status, createdAt }`
+    * `200 OK` for idempotent replay with the same response schema
+  * Error responses:
+
+    * `400 Bad Request` with validation error schema:
+
+      * `code`, `message`, `fieldErrors[] { field, message }`
+    * `409 Conflict` with idempotency conflict schema:
+
+      * `code`, `message` (and optional safe details)
+* Add response examples in the OpenAPI output (via annotations) for:
+
+  * 201 success
+  * 200 replay success
+  * 400 validation error
+  * 409 idempotency mismatch
+
+Export requirement (openapi.yaml at repo root):
+
+* Provide a script or Makefile target to generate `openapi.yaml` at the repo root.
+* Preferred approach:
+
+  * Start the backend (or reuse a running container) and fetch `/v3/api-docs.yaml` if available, or fetch JSON and convert to YAML.
+* Implement one of these options (choose the simplest and most reproducible):
+  Option A (preferred): configure springdoc to expose YAML directly at `/v3/api-docs.yaml`, then export it by curl:
+
+  * `curl http://localhost:8080/v3/api-docs.yaml > openapi.yaml`
+    Option B: export JSON and convert to YAML using a small dockerized tool (no host installs), and write to `openapi.yaml`.
+
+Makefile / documentation:
+
+* Add a Makefile target (name it exactly):
+
+  * `make openapi`
+* `make openapi` must generate/update `openapi.yaml` at repo root using Docker-based tooling (not host installs).
+* Update README with:
+
+  * How to view Swagger UI
+  * How to regenerate `openapi.yaml` with `make openapi`
+
+Validation:
+
+* Add a lightweight test (or CI check) that verifies `openapi.yaml` exists and is non-empty, and optionally contains “/payments” and “Idempotency-Key”.
+* Ensure the OpenAPI file does not include sensitive example data that looks like real card numbers; use obviously fake placeholders.
+
+Deliverables:
+
+* Swagger UI working when the backend is running
+* `openapi.yaml` at repo root
+* `make openapi` reproducibly generates it
+* README updated with the exact commands
+
+
+
+######################################################################
+
+
+
+Implement a comprehensive backend test suite for the Spring Boot Payments API in `server/` (Java 17, MySQL, Flyway, Testcontainers). The tests must run Docker-first via `make test` (do not assume host Java/Maven).
+
+Scope:
+
+* Validation + error response shape tests
+* Encryption-at-rest tests proving cardNumber is not stored in plaintext
+* Idempotency tests proving replay (200) and mismatch conflict (409), and no duplicate payment rows
+* Ensure all tests are stable and deterministic
+
+Do not change the public API contract; only adjust internal code if necessary to make the behavior correct and testable.
+
+General testing constraints:
+
+* Use JUnit 5
+* Use Spring Boot test support
+* Use MockMvc for HTTP-level assertions
+* Use Testcontainers for MySQL integration (tests should use real DB + Flyway migrations)
+* Avoid brittle assertions (timestamps, random IV) by asserting shape/constraints rather than exact values
+
+Required tests (must exist and pass):
+
+A) Validation and error contract tests (MockMvc)
+
+1. Missing `Idempotency-Key` header:
+
+   * POST /payments without the header
+   * Expect 400
+   * JSON body:
+
+     * code == "MISSING_IDEMPOTENCY_KEY"
+     * message present
+     * must be JSON (not HTML)
+2. Blank `Idempotency-Key` header:
+
+   * header value "   " (spaces)
+   * Expect 400 with same code
+3. Field validation errors (table-driven tests are ok):
+
+   * invalid expiry (e.g., "13/99" or "aa/bb") => 400 with fieldErrors containing "expiry"
+   * non-digit cardNumber => 400 with fieldErrors containing "cardNumber"
+   * invalid cvv length => 400 with fieldErrors containing "cvv"
+   * firstName/lastName blank => 400 with fieldErrors for those fields
+     Expectations:
+   * code == "VALIDATION_ERROR"
+   * fieldErrors is an array of { field, message }
+   * no sensitive fields are echoed back
+
+B) Happy path HTTP test (MockMvc)
+4) Valid request:
+
+* Expect 201 Created
+* Response JSON includes:
+
+  * id (uuid format)
+  * status == "CREATED"
+  * createdAt (ISO-8601)
+* Response JSON must NOT include: cardNumber, cvv, expiry
+
+C) Encryption-at-rest tests (DB-level assertion)
+5) After creating a payment (via HTTP or service), query the payments table and assert:
+
+* ciphertext column present and non-empty (byte[] length > 0)
+* IV column present and length == 12 bytes
+* plaintext cardNumber does not appear in the ciphertext bytes (byte scan) and is not stored in any plaintext column
+* CVV is not persisted (no column or always null / not present)
+  Notes:
+* Do not assert exact ciphertext (IV is random).
+* Use JdbcTemplate or repository projection to fetch raw columns.
+
+6. Missing/invalid encryption key behavior:
+
+   * If `PAYMENTS_ENCRYPTION_KEY_B64` is missing or invalid (not base64 / wrong length), application should fail fast OR requests should fail safely with 500.
+   * Implement one test for this behavior. Preferred: fail fast at startup using a dedicated configuration bean and assert context fails with a clear exception message.
+   * Keep the test isolated (e.g., separate test class using @SpringBootTest with overridden properties and expecting startup failure).
+
+D) Idempotency tests (HTTP + DB assertions)
+7) Idempotent replay with same payload:
+
+* First request with key K and payload P:
+
+  * Expect 201 and capture response body
+* Second request with same key K and same payload P:
+
+  * Expect 200
+  * Response body must equal the first response body (same id and createdAt)
+* DB assertions:
+
+  * only 1 payment row exists
+  * idempotency table has 1 record for key K with stored hash and stored response body/status
+
+8. Idempotency mismatch conflict:
+
+   * First request with key K and payload P => 201
+   * Second request with same key K but payload P2 (change firstName or lastName) => 409
+   * JSON error body:
+
+     * code == "IDEMPOTENCY_KEY_REUSED"
+     * message present
+   * DB still has only 1 payment row for that key
+
+9. (Optional but valuable) Race-safety smoke test:
+
+   * In a single test, attempt two parallel submissions with same key K (same payload) using threads.
+   * Assert only one payment row created and both calls resolve to either 201+200 or 200+201, but never two distinct IDs.
+   * If too flaky, skip; stability is more important.
+
+Test infrastructure requirements:
+
+* Ensure Flyway migrations run in tests.
+* Use a base integration test configuration that starts MySQL Testcontainer once per test suite if possible (to reduce runtime), but avoid global state that makes tests brittle.
+* Provide helper methods:
+
+  * build valid payment request JSON
+  * perform POST with Idempotency-Key
+  * parse JSON response
+  * fetch payment row raw columns
+  * count rows in payments and idempotency tables
+
+Make it Docker-first:
+
+* Tests must pass via `make test` (Dockerized Maven + dind).
+* Do not add requirements that need extra host tooling.
+
+Deliverables:
+
+* New/updated test classes covering all sections A–D
+* Any minimal code changes needed to make behavior testable (e.g., consistent error JSON, stable canonical request hashing, fail-fast key validation)
+* All tests pass with `make test`
+
+Additionally, review and implement any missing server-side items and earlier prompts:
+
+* Ensure POST /payments returns 201 on create and 200 on replay
+* Ensure 409 on idempotency key reuse with different payload
+* Ensure OpenAPI endpoints exist and `make openapi` generates root `openapi.yaml`
+* Ensure responses never include raw card data and logs do not print sensitive values
+* Ensure schema does not store plaintext cardNumber/cvv
+* Ensure README documents Docker-first workflows and how to run tests and generate OpenAPI
+
+
+######################################################################
+
+
+######################################################################
+
+
+######################################################################
+
+
+FRONTEND PROMPTS
+
+
+Create the React frontend in `client/` (Vite + React + TypeScript + Tailwind already configured). Implement a clean project structure for a small app:
+
+* Add React Router with a single route `/` rendering `HomePage`.
+* Add `src/components/`, `src/pages/`, `src/data/`, `src/lib/` directories.
+* Add a minimal design baseline:
+
+  * Global layout component with the purple top header and “LOGO” left.
+  * Page container with reasonable max width and spacing.
+* Add a typed API client wrapper in `src/lib/api.ts` that reads `VITE_API_BASE_URL` and provides a `postPayment(...)` function.
+* Keep everything minimal and production-minded; no extra libraries unless needed.
+
+Acceptance:
+
+* `npm run dev` shows the header + “Invoices to pay” title on Home.
+* No UI functionality yet besides rendering.
+
+
+
+######################################################################
+
+
+
+Implement mocked invoices data and types:
+
+* Create `src/types.ts` with:
+
+  * `Invoice` type: `{ id, vendor, amount, currency, issueDate, dueDate, priority }`
+  * `InvoicesResponse` type: `{ invoices: Invoice[], totalAmount: number, lastUpdated: string }`
+  * `Priority` union: `"normal" | "high" | "urgent" | "critical"`
+* Create `src/data/invoices.ts` exporting a constant `mockInvoicesResponse` matching the JSON shown in the prototype.
+* Add helper functions in `src/lib/money.ts` and `src/lib/date.ts`:
+
+  * format USD currency
+  * format dates like “20-Feb-2025”
+* Render the top-right “Total amount to pay” card using `mockInvoicesResponse.totalAmount` and `lastUpdated`.
+
+Acceptance:
+
+* Home shows the top-right summary card with total and lastUpdated date formatted.
+
+
+
+######################################################################
+
+
+
+Implement the desktop invoices table UI:
+
+* Create `InvoicesTable` component that displays:
+
+  * Select-all checkbox in header
+  * Row checkbox per invoice
+  * Columns: Number, Vendor, Date, Due Date, Amount, Priority
+  * Sort icons on headers and implement sorting for at least Number, Vendor, Date, DueDate, Amount, Priority.
+* Selection rules:
+
+  * Only one invoice should be selectable at a time (based on prototype showing one selected).
+  * Clicking a row checkbox sets the selected invoice id; selecting another switches selection.
+  * Select-all control should toggle “none selected” vs “select first row” (or disable it if single-select; but keep the visual control in header).
+* Priority pill badges:
+
+  * normal = gray
+  * high = yellow/orange
+  * urgent = orange
+  * critical = red
+
+Acceptance:
+
+* Desktop view looks like a clean table with sorting and single selection.
+* Selected row shows checked checkbox.
+
+
+
+######################################################################
+
+
+
+Implement the Payment modal as per prototype:
+
+* Open modal when clicking Pay button.
+* Modal fields:
+
+  * Email (required, basic email validation)
+  * Card number (required, digits only; show spaced formatting while typing)
+  * Expiry (required, format MM/YY)
+  * CVC (required, 3–4 digits)
+  * Cardholder name (required; “Full name on card”)
+  * Country/region (select with at least “United States”)
+  * ZIP (required; simple validation)
+* UI:
+
+  * Centered white modal on desktop with overlay dim.
+  * On mobile, modal becomes a full-screen sheet.
+* Submit button text: “Pay”
+* Add small disclaimer text under the button.
+
+Implementation notes:
+
+* Use controlled inputs.
+* Keep validation lightweight but user-friendly (inline error messages).
+
+Acceptance:
+
+* Modal opens/closes, validates fields, and enables submit when valid.
+
+
+
+######################################################################
+
+
+
+Wire the modal submit to backend `POST /payments`:
+
+* Backend expects body: `{ firstName, lastName, expiry, cvv, cardNumber }`
+* Frontend collects “Full name on card”; map it to:
+
+  * firstName = first token
+  * lastName = remainder (or empty string if single token, but then show validation error on UI)
+* Generate `Idempotency-Key`:
+
+  * On modal open, create a UUID and keep it stable for that modal session.
+  * If user retries submission without changing form values, reuse the same key.
+  * If user edits any of firstName/lastName/expiry/cvv/cardNumber after a failed attempt, generate a new idempotency key (so mismatches don’t trigger 409 from the backend).
+* Handle responses:
+
+  * 201 or 200 => success
+  * 400 => show validation error banner and/or field error message
+  * 409 => show a specific message: “This payment attempt was already submitted with a different payload. Please reopen the payment form and try again.”
+* Do not log cardNumber/cvv/expiry.
+
+Acceptance:
+
+* Submitting makes a real API call and handles 201/200/400/409 correctly.
