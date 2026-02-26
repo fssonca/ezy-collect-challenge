@@ -1,7 +1,11 @@
 import { formatUsdCurrency } from "../lib/money";
 import { useInvoicesSelection } from "./InvoicesSelectionContext";
 
-export function PaymentSummary() {
+type PaymentSummaryProps = {
+  onPayClick?: () => void;
+};
+
+export function PaymentSummary({ onPayClick }: PaymentSummaryProps) {
   const { selectedInvoices, feeAmount, payAmount } = useInvoicesSelection();
   const hasSelection = selectedInvoices.length > 0;
 
@@ -37,6 +41,7 @@ export function PaymentSummary() {
 
       <button
         type="button"
+        onClick={onPayClick}
         className="mt-4 w-full rounded-md bg-[var(--color-brand)] px-4 py-3 text-xl font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         disabled={!hasSelection}
       >

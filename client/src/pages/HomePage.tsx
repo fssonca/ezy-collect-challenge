@@ -1,11 +1,14 @@
+import { useState } from "react";
 import { InvoicesSelectionProvider } from "../components/InvoicesSelectionContext";
 import { InvoicesTable } from "../components/InvoicesTable";
+import { PaymentModal } from "../components/PaymentModal";
 import { PaymentSummary } from "../components/PaymentSummary";
 import { TotalAmountCard } from "../components/TotalAmountCard";
 import { HOME_PAGE_TITLE } from "../data/home";
 import { mockInvoicesResponse } from "../data/invoices";
 
 export function HomePage() {
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const lastUpdatedDate = mockInvoicesResponse.lastUpdated.split("T")[0];
 
   return (
@@ -31,15 +34,20 @@ export function HomePage() {
         </div>
 
         <div className="mt-8 hidden lg:mt-10 lg:ml-auto lg:block lg:w-1/4 lg:min-w-[300px] lg:max-w-[336px]">
-          <PaymentSummary />
+          <PaymentSummary onPayClick={() => setIsPaymentModalOpen(true)} />
         </div>
 
         <div className="mt-6 lg:hidden">
           <InvoicesTable invoices={mockInvoicesResponse.invoices} />
           <div className="mt-6">
-            <PaymentSummary />
+            <PaymentSummary onPayClick={() => setIsPaymentModalOpen(true)} />
           </div>
         </div>
+
+        <PaymentModal
+          isOpen={isPaymentModalOpen}
+          onClose={() => setIsPaymentModalOpen(false)}
+        />
       </section>
     </InvoicesSelectionProvider>
   );
