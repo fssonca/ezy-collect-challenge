@@ -107,7 +107,8 @@ class PaymentsControllerTest {
                                   "lastName":"Doe",
                                   "expiry":"13/25",
                                   "cvv":"123",
-                                  "cardNumber":"424242424242"
+                                  "cardNumber":"424242424242",
+                                  "invoiceIds":["INV-2025-002"]
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
@@ -130,7 +131,8 @@ class PaymentsControllerTest {
                                   "lastName":"Doe",
                                   "expiry":"12/25",
                                   "cvv":"123",
-                                  "cardNumber":"4242abcd4242"
+                                  "cardNumber":"4242abcd4242",
+                                  "invoiceIds":["INV-2025-002"]
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
@@ -151,12 +153,81 @@ class PaymentsControllerTest {
                                   "lastName":"Doe",
                                   "expiry":"12/25",
                                   "cvv":"12",
-                                  "cardNumber":"424242424242"
+                                  "cardNumber":"424242424242",
+                                  "invoiceIds":["INV-2025-002"]
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
                 .andExpect(jsonPath("$.fieldErrors[*].field", hasItem("cvv")));
+
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
+    void missingInvoiceIdsReturnsValidationError() throws Exception {
+        mockMvc.perform(post("/payments")
+                        .contentType(APPLICATION_JSON)
+                        .header("Idempotency-Key", "idem-123")
+                        .content("""
+                                {
+                                  "firstName":"Jane",
+                                  "lastName":"Doe",
+                                  "expiry":"12/25",
+                                  "cvv":"123",
+                                  "cardNumber":"424242424242"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.fieldErrors[*].field", hasItem("invoiceIds")));
+
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
+    void emptyInvoiceIdsReturnsValidationError() throws Exception {
+        mockMvc.perform(post("/payments")
+                        .contentType(APPLICATION_JSON)
+                        .header("Idempotency-Key", "idem-123")
+                        .content("""
+                                {
+                                  "firstName":"Jane",
+                                  "lastName":"Doe",
+                                  "expiry":"12/25",
+                                  "cvv":"123",
+                                  "cardNumber":"424242424242",
+                                  "invoiceIds":[]
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.fieldErrors[*].field", hasItem("invoiceIds")));
+
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
+    void blankInvoiceIdEntryReturnsValidationError() throws Exception {
+        mockMvc.perform(post("/payments")
+                        .contentType(APPLICATION_JSON)
+                        .header("Idempotency-Key", "idem-123")
+                        .content("""
+                                {
+                                  "firstName":"Jane",
+                                  "lastName":"Doe",
+                                  "expiry":"12/25",
+                                  "cvv":"123",
+                                  "cardNumber":"424242424242",
+                                  "invoiceIds":["  "]
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.fieldErrors[*].field", hasItem("invoiceIds[0]")));
 
         verifyNoInteractions(paymentService);
     }
@@ -185,7 +256,8 @@ class PaymentsControllerTest {
                           "lastName":"Doe",
                           "expiry":"12/25",
                           "cvv":"123",
-                          "cardNumber":"424242424242"
+                          "cardNumber":"424242424242",
+                          "invoiceIds":["INV-2025-002"]
                         }
                         """, "firstName"),
                 Arguments.of("""
@@ -194,7 +266,8 @@ class PaymentsControllerTest {
                           "lastName":"   ",
                           "expiry":"12/25",
                           "cvv":"123",
-                          "cardNumber":"424242424242"
+                          "cardNumber":"424242424242",
+                          "invoiceIds":["INV-2025-002"]
                         }
                         """, "lastName"));
     }
@@ -206,7 +279,8 @@ class PaymentsControllerTest {
                   "lastName":" Doe ",
                   "expiry":"12/25",
                   "cvv":"123",
-                  "cardNumber":"424242424242"
+                  "cardNumber":"424242424242",
+                  "invoiceIds":["INV-2025-002","INV-2025-008"]
                 }
                 """;
     }

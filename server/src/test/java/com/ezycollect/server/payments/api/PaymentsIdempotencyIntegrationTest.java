@@ -97,6 +97,21 @@ class PaymentsIdempotencyIntegrationTest extends AbstractMySqlSpringBootIntegrat
         assertThat(countRows("payment_idempotency")).isEqualTo(1);
     }
 
+    @Test
+    void reorderingInvoiceIdsWithSameIdempotencyKeyReturnsConflict() throws Exception {
+        String key = "idem-key-3";
+
+        postPayment(key, validPayloadWithInvoiceIds("Jane", "Doe", "INV-2025-002", "INV-2025-008"))
+                .andExpect(status().isCreated());
+
+        postPayment(key, validPayloadWithInvoiceIds("Jane", "Doe", "INV-2025-008", "INV-2025-002"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+
+        assertThat(countRows("payments")).isEqualTo(1);
+        assertThat(countRows("payment_idempotency")).isEqualTo(1);
+    }
+
     private org.springframework.test.web.servlet.ResultActions postPayment(String key, String payload) throws Exception {
         return mockMvc.perform(post("/payments")
                 .contentType(APPLICATION_JSON)
@@ -105,15 +120,20 @@ class PaymentsIdempotencyIntegrationTest extends AbstractMySqlSpringBootIntegrat
     }
 
     private String validPayload(String firstName, String lastName) {
+        return validPayloadWithInvoiceIds(firstName, lastName, "INV-2025-002", "INV-2025-008");
+    }
+
+    private String validPayloadWithInvoiceIds(String firstName, String lastName, String invoiceId1, String invoiceId2) {
         return """
                 {
                   "firstName":"%s",
                   "lastName":"%s",
                   "expiry":"12/25",
                   "cvv":"123",
-                  "cardNumber":"4242424242424242"
+                  "cardNumber":"4242424242424242",
+                  "invoiceIds":["%s","%s"]
                 }
-                """.formatted(firstName, lastName);
+                """.formatted(firstName, lastName, invoiceId1, invoiceId2);
     }
 
     private int countRows(String tableName) {
