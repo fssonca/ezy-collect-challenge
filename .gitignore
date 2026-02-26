@@ -1,7 +1,6 @@
 .env
 .DS_Store
 *.log
-prompts.txt
 
 # Java / Maven
 server/target/

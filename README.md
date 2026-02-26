@@ -68,6 +68,7 @@ Required header:
 
 Request JSON fields:
 
+- `invoiceIds` (required, non-empty array)
 - `firstName`, `lastName`, `expiry`, `cvv`, `cardNumber`
 
 Current response contract:
@@ -84,6 +85,33 @@ Security notes:
 - `cardNumber` is encrypted at rest (AES-GCM); plaintext card number is not stored
 - `cvv` is never persisted
 - Idempotency records store only a request hash and safe response JSON (`id`, `status`, `createdAt`)
+- CORS is enabled for local frontend origins by default (`http://localhost:5173`, `http://127.0.0.1:5173`)
+
+### Frontend (current state)
+
+- Invoices dashboard with sortable desktop table and multi-invoice selection
+- Payment summary with computed subtotal + fee + pay total
+- Payment modal with:
+  - card form validation
+  - card brand detection/icons
+  - backend submission to `POST /payments`
+  - `Idempotency-Key` generation/retry handling in the client
+  - inline error handling for `400` / `409` / network failures
+- Receipt modal shown after successful payment
+- Paid invoices are removed from the list and totals are recomputed
+
+## AI-assisted Development Method
+
+This project used a **spec-driven, incremental development** methodology with AI assistance: each prompt acted like a mini engineering spec with explicit scope, constraints, and acceptance criteria before implementation.
+
+### How the workflow was applied
+
+- **Start with non-negotiable constraints first** (Docker-first, no host Java/Maven, Testcontainers in Docker, single-command run). This forced the core architecture early (`server-tools` + Docker-in-Docker sidecar) and prevented later rework.
+- **Implement in small, testable milestones** using scoped prompts, e.g. monorepo setup → payments API contract/validation → encryption-at-rest → idempotency → OpenAPI export → comprehensive backend tests → frontend flows/modals.
+- **Define behavior through contracts and acceptance criteria** (response shapes, error codes, `201` vs `200` replay, `409` mismatch, no plaintext card storage). This made outputs measurable and reduced ambiguity.
+- **Verification-driven iteration** after each AI-generated change: run the relevant commands (especially `docker compose up --build`, `make test`, `make openapi`), review the code, and adjust details to match the spec and production expectations.
+
+In practice, AI was used as an implementation accelerator, while human review and Docker-based verification remained the source of truth for correctness.
 
 ### Other Docker commands
 
@@ -144,3 +172,4 @@ Important defaults for Docker:
 - Flyway migrations run on backend startup
 - Frontend API base URL is configured via `VITE_API_BASE_URL` build arg (default `http://localhost:8080`)
 - `make test` remains the required verification path for backend changes (Docker-first Maven/Testcontainers workflow)
+- `openapi.yaml` at the repository root is generated from the running backend via `make openapi`
