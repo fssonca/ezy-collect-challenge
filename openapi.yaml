@@ -41,17 +41,20 @@ paths:
                   expiry: 12/29
                   cvv: "123"
                   cardNumber: "123456789012"
+                  invoiceIds:
+                  - INV-2025-008
+                  - INV-2025-007
         required: true
       responses:
-        "200":
-          description: Idempotent replay (same key and same payload)
+        "201":
+          description: Payment created
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CreatePaymentResponse"
               examples:
-                replay:
-                  description: replay
+                created:
+                  description: created
                   value:
                     id: b9ec8bf8-34ef-4d90-97d2-3ec9bd4b3400
                     status: CREATED
@@ -77,15 +80,15 @@ paths:
                     code: MISSING_IDEMPOTENCY_KEY
                     message: Idempotency-Key header is required
                     fieldErrors: []
-        "201":
-          description: Payment created
+        "200":
+          description: Idempotent replay (same key and same payload)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CreatePaymentResponse"
               examples:
-                created:
-                  description: created
+                replay:
+                  description: replay
                   value:
                     id: b9ec8bf8-34ef-4d90-97d2-3ec9bd4b3400
                     status: CREATED
@@ -126,6 +129,7 @@ components:
       - cvv
       - expiry
       - firstName
+      - invoiceIds
       - lastName
       type: object
       properties:
@@ -160,6 +164,14 @@ components:
           type: string
           description: "Primary account number (digits only, 12-19 digits)"
           example: "123456789012"
+        invoiceIds:
+          type: array
+          description: Invoice IDs to be paid in this payment request
+          items:
+            maxLength: 100
+            minLength: 0
+            type: string
+            example: INV-2025-008
       description: Payment creation request
     CreatePaymentResponse:
       type: object

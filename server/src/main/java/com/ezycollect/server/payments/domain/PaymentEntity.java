@@ -31,6 +31,10 @@ public class PaymentEntity {
     private String cardLast4;
 
     @Lob
+    @Column(name = "invoice_ids_json", nullable = false)
+    private String invoiceIdsJson;
+
+    @Lob
     @Column(nullable = false)
     private byte[] cardNumberCiphertext;
 

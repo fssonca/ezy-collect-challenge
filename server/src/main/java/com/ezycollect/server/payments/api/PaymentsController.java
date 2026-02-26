@@ -96,7 +96,7 @@ public class PaymentsController {
                             schema = @Schema(implementation = CreatePaymentRequest.class),
                             examples = @ExampleObject(
                                     name = "createPaymentRequest",
-                                    value = "{\"firstName\":\"Ada\",\"lastName\":\"Lovelace\",\"expiry\":\"12/29\",\"cvv\":\"123\",\"cardNumber\":\"123456789012\"}")))
+                                    value = "{\"firstName\":\"Ada\",\"lastName\":\"Lovelace\",\"expiry\":\"12/29\",\"cvv\":\"123\",\"cardNumber\":\"123456789012\",\"invoiceIds\":[\"INV-2025-008\",\"INV-2025-007\"]}")))
             @Valid @RequestBody CreatePaymentRequest request) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new MissingIdempotencyKeyException();

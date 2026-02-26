@@ -5,7 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import org.springframework.stereotype.Component;
@@ -27,7 +27,8 @@ public class PaymentRequestHashService {
                 request.getLastName(),
                 request.getExpiry(),
                 request.getCvv(),
-                request.getCardNumber());
+                request.getCardNumber(),
+                request.getInvoiceIds() == null ? List.of() : List.copyOf(request.getInvoiceIds()));
 
         try {
             byte[] canonicalJson = canonicalObjectMapper.writeValueAsBytes(payload);
@@ -55,8 +56,8 @@ public class PaymentRequestHashService {
             String lastName,
             String expiry,
             String cvv,
-            String cardNumber
+            String cardNumber,
+            List<String> invoiceIds
     ) {
     }
 }
-

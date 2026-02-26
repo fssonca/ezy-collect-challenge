@@ -1,10 +1,13 @@
 package com.ezycollect.server.payments.application.dto;
 
 import com.ezycollect.server.payments.application.validation.ValidExpiry;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import java.util.List;
 import lombok.Getter;
 
 @Getter
@@ -59,6 +62,15 @@ public class CreatePaymentRequest {
     @Size(min = 12, max = 19, message = "cardNumber must be between 12 and 19 digits")
     private String cardNumber;
 
+    @NotEmpty(message = "invoiceIds is required")
+    @ArraySchema(
+            arraySchema = @Schema(description = "Invoice IDs to be paid in this payment request"),
+            schema = @Schema(example = "INV-2025-008"))
+    private List<
+            @NotBlank(message = "invoiceIds entries must not be blank")
+            @Size(max = 100, message = "invoiceIds entries must be at most 100 characters")
+            String> invoiceIds;
+
     public void setFirstName(String firstName) {
         this.firstName = trim(firstName);
     }
@@ -77,6 +89,16 @@ public class CreatePaymentRequest {
 
     public void setCardNumber(String cardNumber) {
         this.cardNumber = trim(cardNumber);
+    }
+
+    public void setInvoiceIds(List<String> invoiceIds) {
+        if (invoiceIds == null) {
+            this.invoiceIds = null;
+            return;
+        }
+        this.invoiceIds = invoiceIds.stream()
+                .map(this::trim)
+                .toList();
     }
 
     private String trim(String value) {

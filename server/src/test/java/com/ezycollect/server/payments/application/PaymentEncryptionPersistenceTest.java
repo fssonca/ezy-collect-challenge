@@ -36,21 +36,24 @@ class PaymentEncryptionPersistenceTest extends AbstractMySqlSpringBootIntegratio
         request.setExpiry("12/25");
         request.setCvv("123");
         request.setCardNumber(cardNumber);
+        request.setInvoiceIds(java.util.List.of("INV-2025-008", "INV-2025-007"));
 
         var response = paymentService.createPayment("idem-encryption-test", request);
 
         PaymentRow row = jdbcTemplate.queryForObject(
-                "SELECT card_number_ciphertext, card_number_iv, card_last4 FROM payments WHERE id = ?",
+                "SELECT card_number_ciphertext, card_number_iv, card_last4, invoice_ids_json FROM payments WHERE id = ?",
                 (rs, rowNum) -> new PaymentRow(
                         rs.getBytes("card_number_ciphertext"),
                         rs.getBytes("card_number_iv"),
-                        rs.getString("card_last4")),
+                        rs.getString("card_last4"),
+                        rs.getString("invoice_ids_json")),
                 response.response().id());
 
         assertThat(row).isNotNull();
         assertThat(row.ciphertext()).isNotNull().isNotEmpty();
         assertThat(row.iv()).isNotNull().hasSize(12);
         assertThat(row.last4()).isEqualTo("4242");
+        assertThat(row.invoiceIdsJson()).isEqualTo("[\"INV-2025-008\",\"INV-2025-007\"]");
         assertThat(containsAsciiSequence(row.ciphertext(), cardNumber)).isFalse();
         assertThat(paymentColumns()).doesNotContain("cvv", "expiry", "card_number");
         assertThat(paymentColumns()).contains("card_number_ciphertext", "card_number_iv", "card_last4");
@@ -94,6 +97,6 @@ class PaymentEncryptionPersistenceTest extends AbstractMySqlSpringBootIntegratio
                 String.class);
     }
 
-    private record PaymentRow(byte[] ciphertext, byte[] iv, String last4) {
+    private record PaymentRow(byte[] ciphertext, byte[] iv, String last4, String invoiceIdsJson) {
     }
 }

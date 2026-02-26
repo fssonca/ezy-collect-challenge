@@ -15,6 +15,7 @@ import com.ezycollect.server.payments.domain.PaymentStatus;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
@@ -55,6 +56,7 @@ public class PaymentService {
         entity.setId(id);
         entity.setFirstName(request.getFirstName());
         entity.setLastName(request.getLastName());
+        entity.setInvoiceIdsJson(serializeInvoiceIds(request.getInvoiceIds()));
         entity.setCardLast4(last4(request.getCardNumber()));
         EncryptedPayload encryptedCardNumber = aesGcmCrypto.encrypt(request.getCardNumber());
         entity.setCardNumberCiphertext(encryptedCardNumber.ciphertext());
@@ -77,6 +79,14 @@ public class PaymentService {
     private String last4(String cardNumber) {
         int length = cardNumber.length();
         return cardNumber.substring(Math.max(0, length - 4));
+    }
+
+    private String serializeInvoiceIds(List<String> invoiceIds) {
+        try {
+            return objectMapper.writeValueAsString(invoiceIds);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Failed to serialize invoice IDs", ex);
+        }
     }
 
     private PaymentServiceResult handleExistingIdempotency(String idempotencyKey, String requestHash) {
