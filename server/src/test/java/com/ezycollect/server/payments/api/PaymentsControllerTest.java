@@ -10,7 +10,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.http.HttpStatus.CREATED;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -18,6 +20,7 @@ import com.ezycollect.server.payments.application.PaymentService;
 import com.ezycollect.server.payments.application.PaymentServiceResult;
 import com.ezycollect.server.payments.application.dto.CreatePaymentResponse;
 import com.ezycollect.server.shared.api.ApiExceptionHandler;
+import com.ezycollect.server.shared.config.WebCorsConfig;
 import java.time.Instant;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -31,7 +34,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(PaymentsController.class)
-@Import(ApiExceptionHandler.class)
+@Import({ApiExceptionHandler.class, WebCorsConfig.class})
 class PaymentsControllerTest {
 
     @Autowired
@@ -39,6 +42,19 @@ class PaymentsControllerTest {
 
     @MockBean
     private PaymentService paymentService;
+
+    @Test
+    void preflightRequestReturnsCorsHeadersForFrontendOrigin() throws Exception {
+        mockMvc.perform(options("/payments")
+                        .header("Origin", "http://localhost:5173")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "content-type,idempotency-key"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"))
+                .andExpect(header().string("Vary", containsString("Origin")));
+
+        verifyNoInteractions(paymentService);
+    }
 
     @Test
     void validRequestReturnsCreatedWithoutSensitiveFields() throws Exception {
