@@ -1,5 +1,6 @@
 import {
   createContext,
+  useEffect,
   useContext,
   useMemo,
   useState,
@@ -76,6 +77,14 @@ export function InvoicesSelectionProvider({
   function clearSelection() {
     setSelectedInvoiceIdsState([]);
   }
+
+  useEffect(() => {
+    setSelectedInvoiceIdsState((current) => {
+      const allowedIds = new Set(invoices.map((invoice) => invoice.id));
+      const next = current.filter((invoiceId) => allowedIds.has(invoiceId));
+      return next.length === current.length ? current : next;
+    });
+  }, [invoices]);
 
   const value = useMemo<InvoicesSelectionContextValue>(
     () => ({
