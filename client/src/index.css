@@ -4,11 +4,17 @@
 
 :root {
   color-scheme: light;
+
+  --color-brand: #402e90;
+  --font-system:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 }
 
 body {
-  @apply bg-slate-50 text-slate-900;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  background-color: var(--color-brand);
+  @apply text-slate-900;
+  font-family: var(--font-system);
 }
 
 #root {
