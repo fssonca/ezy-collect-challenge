@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { formatDateDayMonthYear } from "../lib/date";
 import { formatUsdCurrency } from "../lib/money";
+import { useInvoicesSelection } from "./InvoicesSelectionContext";
 import type { Invoice, Priority } from "../types";
 
 type SortKey =
@@ -14,8 +15,6 @@ type SortDirection = "asc" | "desc";
 
 type InvoicesTableProps = {
   invoices: Invoice[];
-  selectedInvoiceId?: string | null;
-  onSelectedInvoiceIdChange?: (invoiceId: string | null) => void;
 };
 
 const priorityRank: Record<Priority, number> = {
@@ -34,27 +33,16 @@ const headers: Array<{ key: SortKey; label: string }> = [
   { key: "priority", label: "Priority" },
 ];
 
-export function InvoicesTable({
-  invoices,
-  selectedInvoiceId: controlledSelectedInvoiceId,
-  onSelectedInvoiceIdChange,
-}: InvoicesTableProps) {
-  const [internalSelectedInvoiceId, setInternalSelectedInvoiceId] = useState<
-    string | null
-  >(invoices[invoices.length - 1]?.id ?? null);
+export function InvoicesTable({ invoices }: InvoicesTableProps) {
+  const {
+    selectedInvoiceIds,
+    selectedInvoiceIdSet,
+    toggleInvoice,
+    setSelectedInvoiceIds,
+    clearSelection,
+  } = useInvoicesSelection();
   const [sortKey, setSortKey] = useState<SortKey>("id");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const selectedInvoiceId =
-    controlledSelectedInvoiceId === undefined
-      ? internalSelectedInvoiceId
-      : controlledSelectedInvoiceId;
-
-  function setSelectedInvoiceId(next: string | null) {
-    if (controlledSelectedInvoiceId === undefined) {
-      setInternalSelectedInvoiceId(next);
-    }
-    onSelectedInvoiceIdChange?.(next);
-  }
 
   const sortedInvoices = [...invoices].sort((a, b) => {
     let result = 0;
@@ -96,12 +84,19 @@ export function InvoicesTable({
   }
 
   function toggleSelectAll() {
-    if (selectedInvoiceId) {
-      setSelectedInvoiceId(null);
+    const visibleInvoiceIds = sortedInvoices.map((invoice) => invoice.id);
+    const allVisibleSelected =
+      visibleInvoiceIds.length > 0 &&
+      visibleInvoiceIds.every((invoiceId) =>
+        selectedInvoiceIdSet.has(invoiceId),
+      );
+
+    if (allVisibleSelected) {
+      clearSelection();
       return;
     }
 
-    setSelectedInvoiceId(sortedInvoices[0]?.id ?? null);
+    setSelectedInvoiceIds(visibleInvoiceIds);
   }
 
   return (
@@ -110,14 +105,16 @@ export function InvoicesTable({
         <table className="min-w-full table-fixed">
           <thead className="bg-slate-50/90">
             <tr className="border-b border-slate-200">
-              <th className="w-12 px-4 py-3 text-left">
+              <th className="w-12 pl-6 pr-4 py-3 text-left">
                 <button
                   type="button"
                   onClick={toggleSelectAll}
                   className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-blue-500 bg-white text-[11px] font-bold leading-none text-blue-600"
                   aria-label="Toggle invoice selection"
                 >
-                  <span className={` ${selectedInvoiceId ?? "text-white"}`}>
+                  <span
+                    className={`${selectedInvoiceIds.length > 0 ? "" : "text-white"}`}
+                  >
                     —
                   </span>
                 </button>
@@ -125,7 +122,9 @@ export function InvoicesTable({
               {headers.map((header) => (
                 <th
                   key={header.key}
-                  className={`px-4 py-3 ${
+                  className={`py-3 ${
+                    header.key === "priority" ? "pl-4 pr-6" : "px-4"
+                  } ${
                     header.key === "amount" || header.key === "priority"
                       ? "text-right"
                       : "text-left"
@@ -155,27 +154,30 @@ export function InvoicesTable({
           </thead>
           <tbody>
             {sortedInvoices.map((invoice) => {
-              const isSelected = selectedInvoiceId === invoice.id;
+              const isSelected = selectedInvoiceIdSet.has(invoice.id);
 
               return (
                 <tr
                   key={invoice.id}
-                  className={`border-b border-slate-200 transition-colors`}
+                  onClick={() => toggleInvoice(invoice.id)}
+                  className="cursor-pointer border-b border-slate-200 transition-colors hover:bg-slate-50"
                 >
-                  <td className="px-4 py-2.5">
-                    <label className="inline-flex cursor-pointer items-center">
+                  <td className="pl-6 pr-4 py-2.5">
+                    <label
+                      className="inline-flex cursor-pointer items-center"
+                      onClick={(event) => event.stopPropagation()}
+                    >
                       <input
                         type="checkbox"
                         checked={isSelected}
-                        onChange={() =>
-                          setSelectedInvoiceId(isSelected ? null : invoice.id)
-                        }
+                        onChange={() => toggleInvoice(invoice.id)}
+                        onClick={(event) => event.stopPropagation()}
                         className="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-1 focus:ring-blue-500"
                         aria-label={`Select invoice ${invoice.id}`}
                       />
                     </label>
                   </td>
-                  <td className="px-4 py-2.5 text-sm font-semibold text-slate-800">
+                  <td className="px-4 py-2.5 text-sm text-slate-900">
                     <span className="whitespace-nowrap">{invoice.id}</span>
                   </td>
                   <td className="px-4 py-2.5 text-sm text-slate-500">
@@ -187,12 +189,14 @@ export function InvoicesTable({
                   <td className="px-4 py-2.5 text-sm text-slate-500">
                     {formatDateDayMonthYear(invoice.dueDate)}
                   </td>
-                  <td className="px-4 py-2.5 text-right text-sm font-semibold text-slate-600">
+                  <td
+                    className={`px-4 py-2.5 text-right text-sm ${isSelected && "font-semibold"} text-slate-600`}
+                  >
                     <span className="whitespace-nowrap font-mono">
                       {formatCurrencyTable(invoice.amount)}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-right">
+                  <td className="pl-4 pr-6 py-2.5 text-right">
                     <PriorityBadge priority={invoice.priority} />
                   </td>
                 </tr>
@@ -211,15 +215,15 @@ function formatCurrencyTable(amount: number) {
 
 function PriorityBadge({ priority }: { priority: Priority }) {
   const styleMap: Record<Priority, string> = {
-    normal: "bg-slate-100 text-slate-500",
-    high: "bg-amber-100 text-amber-700",
+    normal: "bg-slate-100 text-slate-600",
+    high: "bg-amber-100 text-amber-600",
     urgent: "bg-orange-100 text-orange-600",
     critical: "bg-red-500 text-white",
   };
 
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${styleMap[priority]}`}
+      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs capitalize ${styleMap[priority]}`}
     >
       <span
         className={`mr-1.5 h-1.5 w-1.5 rounded-full ${

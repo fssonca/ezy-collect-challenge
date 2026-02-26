@@ -10,14 +10,14 @@ export function TotalAmountCard({
   lastUpdatedDate,
 }: TotalAmountCardProps) {
   return (
-    <div className="hidden justify-end text-slate-600 lg:flex">
-      <aside className="w-full max-w-[336px] rounded-md bg-zinc-100 px-4 py-3">
+    <div className="text-slate-600 lg:flex lg:justify-end">
+      <aside className="w-fullsm:max-w-[336px] rounded-md bg-zinc-100 px-4 py-3">
         <div className="grid grid-cols-12 items-center gap-4">
           <div className="col-span-5 min-w-0">
             <div className="text-xs leading-tight text-slate-500">
               Total amount to pay
             </div>
-            <div className="mt-1 font-mono text-sm text-slate-500 font-medium tracking-tight">
+            <div className="mt-1 font-mono text-xs text-slate-500 font-medium tracking-tight">
               {lastUpdatedDate}
             </div>
           </div>
