@@ -24,6 +24,12 @@ Update secrets in `.env` (at minimum):
 - `MYSQL_ROOT_PASSWORD`
 - `PAYMENTS_ENCRYPTION_KEY_B64`
 
+Generate a secure encryption key:
+
+```bash
+openssl rand -base64 32
+```
+
 ### Run the app
 
 ```bash
