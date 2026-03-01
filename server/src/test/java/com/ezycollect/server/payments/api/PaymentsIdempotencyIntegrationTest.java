@@ -98,15 +98,21 @@ class PaymentsIdempotencyIntegrationTest extends AbstractMySqlSpringBootIntegrat
     }
 
     @Test
-    void reorderingInvoiceIdsWithSameIdempotencyKeyReturnsConflict() throws Exception {
+    void reorderingInvoiceIdsWithSameIdempotencyKeyIsTreatedAsSameRequest() throws Exception {
         String key = "idem-key-3";
 
-        postPayment(key, validPayloadWithInvoiceIds("Jane", "Doe", "INV-2025-002", "INV-2025-008"))
-                .andExpect(status().isCreated());
+        MvcResult first = postPayment(key, validPayloadWithInvoiceIds("Jane", "Doe", "INV-2025-002", "INV-2025-008"))
+                .andExpect(status().isCreated())
+                .andReturn();
 
-        postPayment(key, validPayloadWithInvoiceIds("Jane", "Doe", "INV-2025-008", "INV-2025-002"))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+        MvcResult replay = postPayment(key, validPayloadWithInvoiceIds("Jane", "Doe", "INV-2025-008", "INV-2025-002"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").exists())
+                .andReturn();
+
+        JsonNode firstJson = objectMapper.readTree(first.getResponse().getContentAsString());
+        JsonNode replayJson = objectMapper.readTree(replay.getResponse().getContentAsString());
+        assertThat(replayJson).isEqualTo(firstJson);
 
         assertThat(countRows("payments")).isEqualTo(1);
         assertThat(countRows("payment_idempotency")).isEqualTo(1);
