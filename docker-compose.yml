@@ -2,8 +2,8 @@ services:
   mysql:
     image: mysql:8.4
     environment:
-      MYSQL_DATABASE: ${DB_NAME:-ezy}
-      MYSQL_USER: ${DB_USER:-ezy}
+      MYSQL_DATABASE: ${DB_NAME:-payments}
+      MYSQL_USER: ${DB_USER:-payments}
       MYSQL_PASSWORD: ${DB_PASSWORD:-change_me}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_change_me}
     ports:
@@ -37,8 +37,8 @@ services:
     environment:
       DB_HOST: ${DB_HOST:-mysql}
       DB_PORT: ${DB_PORT:-3306}
-      DB_NAME: ${DB_NAME:-ezy}
-      DB_USER: ${DB_USER:-ezy}
+      DB_NAME: ${DB_NAME:-payments}
+      DB_USER: ${DB_USER:-payments}
       DB_PASSWORD: ${DB_PASSWORD:-change_me}
       PAYMENTS_ENCRYPTION_KEY_B64: ${PAYMENTS_ENCRYPTION_KEY_B64:?PAYMENTS_ENCRYPTION_KEY_B64 is required (base64-encoded 32-byte key)}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-docker}
@@ -70,8 +70,8 @@ services:
       TESTCONTAINERS_RYUK_DISABLED: "true"
       DB_HOST: ${DB_HOST:-mysql}
       DB_PORT: ${DB_PORT:-3306}
-      DB_NAME: ${DB_NAME:-ezy}
-      DB_USER: ${DB_USER:-ezy}
+      DB_NAME: ${DB_NAME:-payments}
+      DB_USER: ${DB_USER:-payments}
       DB_PASSWORD: ${DB_PASSWORD:-change_me}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_change_me}
       PAYMENTS_ENCRYPTION_KEY_B64: ${PAYMENTS_ENCRYPTION_KEY_B64:?PAYMENTS_ENCRYPTION_KEY_B64 is required (base64-encoded 32-byte key)}

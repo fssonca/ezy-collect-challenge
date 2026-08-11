@@ -11,10 +11,10 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.ezycollect</groupId>
+    <groupId>com.payments</groupId>
     <artifactId>server</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>ezycollect-server</name>
+    <name>payments-server</name>
     <description>Docker-first Spring Boot backend</description>
 
     <properties>

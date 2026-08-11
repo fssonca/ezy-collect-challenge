@@ -1,4 +1,6 @@
-# ezyCollect Monorepo
+# Payment Processing Monorepo
+
+A payment-intake service with field-level AES-GCM encryption and idempotent payment creation — built as a Docker-first monorepo where the entire stack (build, tests, runtime) runs in containers.
 
 Docker-first monorepo:
 
